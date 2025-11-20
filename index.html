@@ -1,183 +1,34 @@
-<!doctype html>
-<html lang="pt-BR">
+<!DOCTYPE html>
+<html lang="pt">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Invisível — Remover Fundo (teste)</title>
-  <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:20px;background:#f6f7fb;color:#111}
-    .card{max-width:880px;margin:0 auto;background:white;padding:18px;border-radius:10px;box-shadow:0 6px 20px rgba(10,10,20,0.06)}
-    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-    canvas{display:block;max-width:100%;border:1px solid #ddd;background:transparent}
-    #canvasWrap{position:relative;overflow:auto;max-height:70vh}
-    .btn{padding:8px 12px;border-radius:8px;border:0;cursor:pointer}
-    .btn-primary{background:#2563eb;color:white}
-    .btn-ghost{background:#f3f4f6;border:1px solid #e5e7eb}
-    #status{font-size:13px;color:#444;margin-top:8px}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Removedor de Fundo Simples</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="card">
-    <h2>Invisível — Remover Fundo (teste)</h2>
+    <header>
+        <h1>🖼️ Removedor de Fundo Simples</h1>
+        <p>Carregue uma imagem para remover o fundo com processamento no navegador.</p>
+    </header>
 
-    <div class="row" style="margin-bottom:8px">
-      <input id="file" type="file" accept="image/*">
-      <button id="btnRemove" class="btn btn-primary" disabled>Remover Fundo</button>
-      <button id="btnRestore" class="btn btn-ghost" disabled>Restaurar</button>
-      <button id="btnDownload" class="btn btn-primary" disabled>Baixar PNG (transparente)</button>
-    </div>
+    <main>
+        <input type="file" id="imageUpload" accept="image/*">
+        <button id="removeButton" disabled>Remover Fundo</button>
 
-    <div id="status">Aguardando upload...</div>
+        <section id="images-container">
+            <div>
+                <h2>Original</h2>
+                <img id="originalImage" src="" alt="Imagem Original" style="display:none;">
+            </div>
+            <div>
+                <h2>Resultado</h2>
+                <canvas id="resultCanvas" style="border: 1px solid #ccc;"></canvas>
+            </div>
+        </section>
+    </main>
 
-    <div id="canvasWrap" style="margin-top:12px">
-      <!-- Um único canvas visível que mostra o resultado final.
-           Mantemos uma canvas oculta para a máscara que o MediaPipe fornece. -->
-      <canvas id="mainCanvas"></canvas>
-      <canvas id="maskCanvas" style="display:none"></canvas>
-    </div>
-
-    <p style="margin-top:10px;font-size:13px;color:#555">
-      Observação: se abrir diretamente via arquivo (file://) der problema com o MediaPipe, rode um servidor local simples:
-      <code>python -m http.server</code> no diretório do arquivo e acesse <code>http://localhost:8000</code>.
-    </p>
-  </div>
-
-  <!-- MediaPipe Selfie Segmentation -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
-
-  <script>
-    const fileInput = document.getElementById('file');
-    const mainCanvas = document.getElementById('mainCanvas');
-    const maskCanvas = document.getElementById('maskCanvas');
-    const mainCtx = mainCanvas.getContext('2d');
-    const maskCtx = maskCanvas.getContext('2d');
-
-    const status = document.getElementById('status');
-    const btnRemove = document.getElementById('btnRemove');
-    const btnRestore = document.getElementById('btnRestore');
-    const btnDownload = document.getElementById('btnDownload');
-
-    let originalImage = null;      // HTMLImageElement
-    let segMaskElement = null;     // canvas element returned by MediaPipe (segmentationMask)
-    let lastResultWasRemoved = false;
-
-    // Initialize MediaPipe segmentation and REGISTER onResults immediately
-    const selfieSegmentation = new SelfieSegmentation({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
-    });
-
-    selfieSegmentation.setOptions({ modelSelection: 1 });
-
-    selfieSegmentation.onResults((results) => {
-      // results.segmentationMask is an HTMLCanvasElement (RGBA where alpha encodes mask)
-      if (!results || !results.segmentationMask) {
-        console.warn('MediaPipe: sem máscara nos resultados');
-        return;
-      }
-      segMaskElement = results.segmentationMask;
-      // draw mask to our hidden maskCanvas at original size
-      maskCanvas.width = segMaskElement.width;
-      maskCanvas.height = segMaskElement.height;
-      maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
-      maskCtx.drawImage(segMaskElement, 0, 0, maskCanvas.width, maskCanvas.height);
-      status.textContent = 'Máscara calculada. Clique em "Remover Fundo".';
-      btnRemove.disabled = false;
-    });
-
-    // Utility: enable / disable controls
-    function enableControls(enabled){
-      btnRemove.disabled = !enabled;
-      btnRestore.disabled = !enabled;
-      btnDownload.disabled = !enabled;
-    }
-
-    fileInput.addEventListener('change', async (ev) => {
-      const f = ev.target.files && ev.target.files[0];
-      if (!f) return;
-      status.textContent = 'Carregando imagem...';
-      try {
-        const img = new Image();
-        img.src = URL.createObjectURL(f);
-        await img.decode();
-
-        // Keep the original resolution
-        originalImage = img;
-        mainCanvas.width = img.width;
-        mainCanvas.height = img.height;
-        maskCanvas.width = img.width;
-        maskCanvas.height = img.height;
-
-        // Draw the original image immediately so user sees it
-        mainCtx.clearRect(0,0,mainCanvas.width, mainCanvas.height);
-        mainCtx.drawImage(originalImage, 0, 0);
-
-        status.textContent = 'Imagem carregada. Calculando máscara (pode levar 0.5-2s)...';
-        enableControls(false);
-        lastResultWasRemoved = false;
-
-        // Prepare an offscreen canvas at original size and send to MediaPipe
-        const off = document.createElement('canvas');
-        off.width = img.width;
-        off.height = img.height;
-        const offCtx = off.getContext('2d');
-        offCtx.drawImage(img, 0, 0);
-
-        // IMPORTANT: onResults is already set above, now call send
-        await selfieSegmentation.send({ image: off });
-        // when onResults fires it will enable the Remove button
-      } catch (err) {
-        console.error(err);
-        status.textContent = 'Erro ao carregar/processar a imagem: ' + (err.message || err);
-        enableControls(false);
-      }
-    });
-
-    // Apply mask: we will keep only the person (mask) and leave the rest transparent
-    btnRemove.addEventListener('click', () => {
-      if (!originalImage || !segMaskElement) {
-        status.textContent = 'Ainda não há máscara disponível.';
-        return;
-      }
-      // draw original
-      mainCtx.clearRect(0,0,mainCanvas.width, mainCanvas.height);
-      mainCtx.drawImage(originalImage, 0, 0);
-
-      // destination-in with segMask: keeps pixels where mask alpha>0
-      mainCtx.globalCompositeOperation = 'destination-in';
-      // segMaskElement may have same size as maskCanvas or a different internal size; draw stretched to full size
-      mainCtx.drawImage(segMaskElement, 0, 0, mainCanvas.width, mainCanvas.height);
-
-      // reset composite
-      mainCtx.globalCompositeOperation = 'source-over';
-
-      status.textContent = 'Fundo removido — pronto para baixar.';
-      lastResultWasRemoved = true;
-      btnDownload.disabled = false;
-      btnRestore.disabled = false;
-    });
-
-    // Restore original image (undo)
-    btnRestore.addEventListener('click', () => {
-      if (!originalImage) return;
-      mainCtx.clearRect(0,0,mainCanvas.width, mainCanvas.height);
-      mainCtx.drawImage(originalImage, 0, 0);
-      status.textContent = 'Imagem restaurada.';
-      btnDownload.disabled = false;
-      lastResultWasRemoved = false;
-    });
-
-    // Download as PNG (preserve resolution, with transparency)
-    btnDownload.addEventListener('click', () => {
-      // If user hasn't removed background, still allow download (will include original)
-      const link = document.createElement('a');
-      link.download = lastResultWasRemoved ? 'imagem_transparente.png' : 'imagem.png';
-      link.href = mainCanvas.toDataURL('image/png');
-      link.click();
-      status.textContent = 'Download iniciado.';
-    });
-
-    // initial state
-    enableControls(false);
-  </script>
+    <script src="script.js"></script>
 </body>
 </html>
+
