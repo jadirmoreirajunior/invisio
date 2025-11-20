@@ -1,34 +1,11 @@
-<!DOCTYPE html>
-<html lang="pt">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Removedor de Fundo Simples</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
-    <header>
-        <h1>🖼️ Removedor de Fundo Simples</h1>
-        <p>Carregue uma imagem para remover o fundo com processamento no navegador.</p>
-    </header>
-
-    <main>
-        <input type="file" id="imageUpload" accept="image/*">
-        <button id="removeButton" disabled>Remover Fundo</button>
-
-        <section id="images-container">
-            <div>
-                <h2>Original</h2>
-                <img id="originalImage" src="" alt="Imagem Original" style="display:none;">
-            </div>
-            <div>
-                <h2>Resultado</h2>
-                <canvas id="resultCanvas" style="border: 1px solid #ccc;"></canvas>
-            </div>
-        </section>
-    </main>
-
-    <script src="script.js"></script>
-</body>
-</html>
-
+<section id="images-container">
+    <div>
+        <h2>Original</h2>
+        <img id="originalImage" src="" alt="Imagem Original" style="display:none;">
+    </div>
+    <div>
+        <h2>Resultado</h2>
+        <canvas id="resultCanvas" style="border: 1px solid #ccc;"></canvas>
+        <button id="downloadButton" style="display: none; margin-top: 10px;">Baixar Imagem</button>
+    </div>
+</section>
