@@ -1,0 +1,69 @@
+body {
+    font-family: sans-serif;
+    background-color: #f4f4f9;
+    color: #333;
+    margin: 0;
+    padding: 20px;
+    text-align: center;
+}
+
+header {
+    margin-bottom: 30px;
+}
+
+main {
+    max-width: 900px;
+    margin: 0 auto;
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+#imageUpload, #removeButton {
+    padding: 10px 15px;
+    margin: 10px;
+    font-size: 16px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+#imageUpload {
+    border: 1px solid #ccc;
+    background-color: #eee;
+}
+
+#removeButton {
+    background-color: #007bff;
+    color: white;
+    transition: background-color 0.3s;
+}
+
+#removeButton:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+#images-container {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 30px;
+}
+
+#images-container > div {
+    flex: 1;
+    padding: 10px;
+}
+
+#originalImage {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+#resultCanvas {
+    display: block; /* Para remover espaços indesejados abaixo do canvas */
+    margin: 0 auto;
+}
