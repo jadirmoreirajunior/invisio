@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Editor Completo com Suavização Profissional</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    canvas { border:1px solid #aaa; }
+  </style>
+</head>
+<body class="bg-gray-100 p-6">
+
+<div class="max-w-6xl mx-auto bg-white p-6 rounded-2xl shadow-lg">
+  <h1 class="text-3xl font-bold mb-4">Editor Completo com Suavização Profissional</h1>
+
+  <input type="file" id="upload" accept="image/*" class="mb-4" />
+
+  <!-- TOOLBAR -->
+  <div id="toolbar" class="hidden flex flex-wrap gap-3 mb-4">
+
+    <button id="btnRemove" class="px-4 py-2 bg-blue-600 text-white rounded">Remover Fundo</button>
+    <button id="btnRestore" class="px-4 py-2 bg-gray-600 text-white rounded">Restaurar Fundo</button>
+
+    <button id="btnBrush" class="px-4 py-2 bg-indigo-600 text-white rounded">Borracha</button>
+    <input id="brushSize" type="range" min="5" max="100" value="30" />
+
+    <button id="btnRectCut" class="px-4 py-2 bg-orange-600 text-white rounded">Recorte Retangular</button>
+    <button id="btnClearCut" class="px-4 py-2 bg-gray-700 text-white rounded">Limpar Recortes</button>
+
+    <button id="btnZoomIn" class="px-3 py-2 bg-green-600 text-white rounded">Zoom +</button>
+    <button id="btnZoomOut" class="px-3 py-2 bg-green-800 text-white rounded">Zoom -</button>
+
+    <button id="btnUndo" class="px-3 py-2 bg-slate-600 text-white rounded">Undo</button>
+    <button id="btnRedo" class="px-3 py-2 bg-slate-800 text-white rounded">Redo</button>
+
+    <button id="btnDownloadPNG" class="px-4 py-2 bg-blue-700 text-white rounded">Baixar PNG</button>
+    <button id="btnDownloadSVG" class="px-4 py-2 bg-purple-700 text-white rounded">Baixar SVG</button>
+  </div>
+
+  <!-- CONTROLES PROFISSIONAIS DE SUAVIZAÇÃO -->
+  <div id="smoothControls" class="hidden bg-gray-50 rounded-xl p-4 mb-4 border">
+    <h2 class="font-semibold mb-2">Suavização Profissional</h2>
+
+    <label>Feather (raio):</label>
+    <input id="smoothFeather" type="range" min="0" max="100" value="20" class="w-full mb-3" />
+
+    <label>Contraste da Máscara:</label>
+    <input id="smoothContrast" type="range" min="0" max="100" value="50" class="w-full mb-3" />
+
+    <label>Expandir/Contrair:</label>
+    <input id="smoothExpand" type="range" min="-50" max="50" value="0" class="w-full mb-3" />
+
+    <label>Suavização Inteligente (Edge-Aware):</label>
+    <input id="smoothEdge" type="range" min="0" max="100" value="30" class="w-full mb-3" />
+
+    <button id="btnApplySmooth" class="px-4 py-2 bg-black text-white rounded">Aplicar Suavização</button>
+  </div>
+
+
+  <div class="relative overflow-hidden border rounded-xl">
+    <canvas id="canvas"></canvas>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+
+<script>
+let upload = document.getElementById("upload");
+let canvas = document.getElementById("canvas");
+let ctx = canvas.getContext("2d");
+
+let toolbar = document.getElementById("toolbar");
+let smoothControls = document.getElementById("smoothControls");
+
+let btnRemove = btnRemove;
+let btnRestore = btnRestore;
+let btnBrush = btnBrush;
+let btnClearCut = btnClearCut;
+let btnRectCut = btnRectCut;
+let brushSize = brushSize;
+
+let btnDownloadPNG = btnDownloadPNG;
+let btnDownloadSVG = btnDownloadSVG;
+
+let btnZoomIn = btnZoomIn;
+let btnZoomOut = btnZoomOut;
+
+let btnUndo = btnUndo;
+let btnRedo = btnRedo;
+
+let btnApplySmooth = btnApplySmooth;
+
+let originalImg = null;
+let segmentationMask = null;
+
+let zoom = 1;
+let offsetX = 0;
+let offsetY = 0;
+
+let brushing = false;
+let rectCutting = false;
+let rectStart = null;
+
+let undoStack = [];
+let redoStack = [];
+
+function saveState(){ undoStack.push(canvas.toDataURL()); redoStack=[]; }
+function undo(){ if(undoStack.length){ redoStack.push(canvas.toDataURL()); let img=new Image(); img.src=undoStack.pop(); img.onload=()=>ctx.drawImage(img,0,0);} }
+function redo(){ if(redoStack.length){ undoStack.push(canvas.toDataURL()); let img=new Image(); img.src=redoStack.pop(); img.onload=()=>ctx.drawImage(img,0,0);} }
+
+btnUndo.onclick=undo;
+btnRedo.onclick=redo;
+
+const selfieSegmentation=new SelfieSegmentation({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}`});
+selfieSegmentation.setOptions({modelSelection:1});
+
+upload.addEventListener("change",async e=>{
+  const file=e.target.files[0];
+  const img=new Image(); img.src=URL.createObjectURL(file);
+  await img.decode();
+
+  canvas.width=img.width;
+  canvas.height=img.height;
+  originalImg=img;
+  ctx.drawImage(img,0,0);
+
+  await computeMask(img);
+  toolbar.classList.remove("hidden");
+  smoothControls.classList.remove("hidden");
+});
+
+async function computeMask(img){
+  const off=document.createElement("canvas");
+  off.width=img.width; off.height=img.height;
+  off.getContext("2d").drawImage(img,0,0);
+
+  selfieSegmentation.onResults(r=>segmentationMask=r.segmentationMask);
+  await selfieSegmentation.send({image:off});
+}
+
+btnRemove.onclick=()=>{
+  saveState();
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(originalImg,0,0);
+  ctx.globalCompositeOperation="destination-in";
+  ctx.drawImage(segmentationMask,0,0,canvas.width,canvas.height);
+  ctx.globalCompositeOperation="source-over";
+};
+
+btnRestore.onclick=()=>{ saveState(); ctx.drawImage(originalImg,0,0); };
+
+btnBrush.onclick=()=>{ brushing=!brushing; rectCutting=false; };
+
+btnRectCut.onclick=()=>{ rectCutting=!rectCutting; brushing=false; };
+
+btnClearCut.onclick=()=>{ saveState(); ctx.drawImage(originalImg,0,0); };
+
+canvas.addEventListener("mousedown",e=>{
+  const x=(e.offsetX-offsetX)/zoom;
+  const y=(e.offsetY-offsetY)/zoom;
+
+  if(brushing){
+    saveState();
+    canvas.onmousemove=ev=>{
+      const bx=(ev.offsetX-offsetX)/zoom;
+      const by=(ev.offsetY-offsetY)/zoom;
+      ctx.globalCompositeOperation="destination-out";
+      ctx.beginPath(); ctx.arc(bx,by,brushSize.value,0,Math.PI*2); ctx.fill();
+      ctx.globalCompositeOperation="source-over";
+    };
+  }
+
+  if(rectCutting){ rectStart={x,y}; }
+});
+
+canvas.addEventListener("mouseup",e=>{
+  canvas.onmousemove=null;
+
+  if(rectCutting && rectStart){
+    saveState();
+    const x2=(e.offsetX-offsetX)/zoom;
+    const y2=(e.offsetY-offsetY)/zoom;
+    const w=x2-rectStart.x;
+    const h=y2-rectStart.y;
+    ctx.clearRect(rectStart.x,rectStart.y,w,h);
+    rectStart=null;
+  }
+});
+
+btnZoomIn.onclick=()=>{ zoom*=1.1; redraw(); };
+btnZoomOut.onclick=()=>{ zoom/=1.1; redraw(); };
+
+function redraw(){ ctx.setTransform(zoom,0,0,zoom,offsetX,offsetY); ctx.drawImage(canvas,0,0); }
+
+btnDownloadPNG.onclick=()=>{
+  const link=document.createElement("a"); link.download="imagem.png";
+  link.href=canvas.toDataURL("image/png"); link.click();
+};
+
+btnDownloadSVG.onclick=()=>{
+  const maskData=canvas.toDataURL("image/png");
+  const svg=`<?xml version='1.0'?><svg xmlns='http://www.w3.org/2000/svg' width='${canvas.width}' height='${canvas.height}'>
+  <defs><mask id='m'><image href='${maskData}' width='100%' height='100%'/></mask></defs>
+  <image href='${originalImg.src}' width='100%' height='100%' mask='url(#m)'/>
+  </svg>`;
+  const blob=new Blob([svg],{type:"image/svg+xml"});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement("a"); link.href=url; link.download="imagem.svg"; link.click();
+};
+
+// ===========================
+//     SUAVIZAÇÃO PROFISSIONAL
+// ===========================
+btnApplySmooth.onclick=()=>{
+  saveState();
+
+  let feather=parseInt(smoothFeather.value);
+  let expand=parseInt(smoothExpand.value);
+  let contrast=parseInt(smoothContrast.value)/100;
+  let edge=parseInt(smoothEdge.value)/100;
+
+  let imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
+  let d=imgData.data;
+
+  for(let i=0;i<d.length;i+=4){
+    let a=d[i+3]/255;
+
+    a=Math.pow(a,1-contrast);
+    a+=(expand/100);
+    a=Math.min(1,Math.max(0,a));
+
+    d[i+3]=a*255;
+  }
+
+  ctx.putImageData(imgData,0,0);
+};
+
+</script>
+</body>
+</html>
