@@ -1,241 +1,183 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Editor Completo com Suavização Profissional</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Invisível — Remover Fundo (teste)</title>
   <style>
-    canvas { border:1px solid #aaa; }
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:20px;background:#f6f7fb;color:#111}
+    .card{max-width:880px;margin:0 auto;background:white;padding:18px;border-radius:10px;box-shadow:0 6px 20px rgba(10,10,20,0.06)}
+    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    canvas{display:block;max-width:100%;border:1px solid #ddd;background:transparent}
+    #canvasWrap{position:relative;overflow:auto;max-height:70vh}
+    .btn{padding:8px 12px;border-radius:8px;border:0;cursor:pointer}
+    .btn-primary{background:#2563eb;color:white}
+    .btn-ghost{background:#f3f4f6;border:1px solid #e5e7eb}
+    #status{font-size:13px;color:#444;margin-top:8px}
   </style>
 </head>
-<body class="bg-gray-100 p-6">
+<body>
+  <div class="card">
+    <h2>Invisível — Remover Fundo (teste)</h2>
 
-<div class="max-w-6xl mx-auto bg-white p-6 rounded-2xl shadow-lg">
-  <h1 class="text-3xl font-bold mb-4">Editor Completo com Suavização Profissional</h1>
+    <div class="row" style="margin-bottom:8px">
+      <input id="file" type="file" accept="image/*">
+      <button id="btnRemove" class="btn btn-primary" disabled>Remover Fundo</button>
+      <button id="btnRestore" class="btn btn-ghost" disabled>Restaurar</button>
+      <button id="btnDownload" class="btn btn-primary" disabled>Baixar PNG (transparente)</button>
+    </div>
 
-  <input type="file" id="upload" accept="image/*" class="mb-4" />
+    <div id="status">Aguardando upload...</div>
 
-  <!-- TOOLBAR -->
-  <div id="toolbar" class="hidden flex flex-wrap gap-3 mb-4">
+    <div id="canvasWrap" style="margin-top:12px">
+      <!-- Um único canvas visível que mostra o resultado final.
+           Mantemos uma canvas oculta para a máscara que o MediaPipe fornece. -->
+      <canvas id="mainCanvas"></canvas>
+      <canvas id="maskCanvas" style="display:none"></canvas>
+    </div>
 
-    <button id="btnRemove" class="px-4 py-2 bg-blue-600 text-white rounded">Remover Fundo</button>
-    <button id="btnRestore" class="px-4 py-2 bg-gray-600 text-white rounded">Restaurar Fundo</button>
-
-    <button id="btnBrush" class="px-4 py-2 bg-indigo-600 text-white rounded">Borracha</button>
-    <input id="brushSize" type="range" min="5" max="100" value="30" />
-
-    <button id="btnRectCut" class="px-4 py-2 bg-orange-600 text-white rounded">Recorte Retangular</button>
-    <button id="btnClearCut" class="px-4 py-2 bg-gray-700 text-white rounded">Limpar Recortes</button>
-
-    <button id="btnZoomIn" class="px-3 py-2 bg-green-600 text-white rounded">Zoom +</button>
-    <button id="btnZoomOut" class="px-3 py-2 bg-green-800 text-white rounded">Zoom -</button>
-
-    <button id="btnUndo" class="px-3 py-2 bg-slate-600 text-white rounded">Undo</button>
-    <button id="btnRedo" class="px-3 py-2 bg-slate-800 text-white rounded">Redo</button>
-
-    <button id="btnDownloadPNG" class="px-4 py-2 bg-blue-700 text-white rounded">Baixar PNG</button>
-    <button id="btnDownloadSVG" class="px-4 py-2 bg-purple-700 text-white rounded">Baixar SVG</button>
+    <p style="margin-top:10px;font-size:13px;color:#555">
+      Observação: se abrir diretamente via arquivo (file://) der problema com o MediaPipe, rode um servidor local simples:
+      <code>python -m http.server</code> no diretório do arquivo e acesse <code>http://localhost:8000</code>.
+    </p>
   </div>
 
-  <!-- CONTROLES PROFISSIONAIS DE SUAVIZAÇÃO -->
-  <div id="smoothControls" class="hidden bg-gray-50 rounded-xl p-4 mb-4 border">
-    <h2 class="font-semibold mb-2">Suavização Profissional</h2>
+  <!-- MediaPipe Selfie Segmentation -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
 
-    <label>Feather (raio):</label>
-    <input id="smoothFeather" type="range" min="0" max="100" value="20" class="w-full mb-3" />
+  <script>
+    const fileInput = document.getElementById('file');
+    const mainCanvas = document.getElementById('mainCanvas');
+    const maskCanvas = document.getElementById('maskCanvas');
+    const mainCtx = mainCanvas.getContext('2d');
+    const maskCtx = maskCanvas.getContext('2d');
 
-    <label>Contraste da Máscara:</label>
-    <input id="smoothContrast" type="range" min="0" max="100" value="50" class="w-full mb-3" />
+    const status = document.getElementById('status');
+    const btnRemove = document.getElementById('btnRemove');
+    const btnRestore = document.getElementById('btnRestore');
+    const btnDownload = document.getElementById('btnDownload');
 
-    <label>Expandir/Contrair:</label>
-    <input id="smoothExpand" type="range" min="-50" max="50" value="0" class="w-full mb-3" />
+    let originalImage = null;      // HTMLImageElement
+    let segMaskElement = null;     // canvas element returned by MediaPipe (segmentationMask)
+    let lastResultWasRemoved = false;
 
-    <label>Suavização Inteligente (Edge-Aware):</label>
-    <input id="smoothEdge" type="range" min="0" max="100" value="30" class="w-full mb-3" />
+    // Initialize MediaPipe segmentation and REGISTER onResults immediately
+    const selfieSegmentation = new SelfieSegmentation({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
+    });
 
-    <button id="btnApplySmooth" class="px-4 py-2 bg-black text-white rounded">Aplicar Suavização</button>
-  </div>
+    selfieSegmentation.setOptions({ modelSelection: 1 });
 
+    selfieSegmentation.onResults((results) => {
+      // results.segmentationMask is an HTMLCanvasElement (RGBA where alpha encodes mask)
+      if (!results || !results.segmentationMask) {
+        console.warn('MediaPipe: sem máscara nos resultados');
+        return;
+      }
+      segMaskElement = results.segmentationMask;
+      // draw mask to our hidden maskCanvas at original size
+      maskCanvas.width = segMaskElement.width;
+      maskCanvas.height = segMaskElement.height;
+      maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
+      maskCtx.drawImage(segMaskElement, 0, 0, maskCanvas.width, maskCanvas.height);
+      status.textContent = 'Máscara calculada. Clique em "Remover Fundo".';
+      btnRemove.disabled = false;
+    });
 
-  <div class="relative overflow-hidden border rounded-xl">
-    <canvas id="canvas"></canvas>
-  </div>
-</div>
+    // Utility: enable / disable controls
+    function enableControls(enabled){
+      btnRemove.disabled = !enabled;
+      btnRestore.disabled = !enabled;
+      btnDownload.disabled = !enabled;
+    }
 
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+    fileInput.addEventListener('change', async (ev) => {
+      const f = ev.target.files && ev.target.files[0];
+      if (!f) return;
+      status.textContent = 'Carregando imagem...';
+      try {
+        const img = new Image();
+        img.src = URL.createObjectURL(f);
+        await img.decode();
 
-<script>
-let upload = document.getElementById("upload");
-let canvas = document.getElementById("canvas");
-let ctx = canvas.getContext("2d");
+        // Keep the original resolution
+        originalImage = img;
+        mainCanvas.width = img.width;
+        mainCanvas.height = img.height;
+        maskCanvas.width = img.width;
+        maskCanvas.height = img.height;
 
-let toolbar = document.getElementById("toolbar");
-let smoothControls = document.getElementById("smoothControls");
+        // Draw the original image immediately so user sees it
+        mainCtx.clearRect(0,0,mainCanvas.width, mainCanvas.height);
+        mainCtx.drawImage(originalImage, 0, 0);
 
-let btnRemove = btnRemove;
-let btnRestore = btnRestore;
-let btnBrush = btnBrush;
-let btnClearCut = btnClearCut;
-let btnRectCut = btnRectCut;
-let brushSize = brushSize;
+        status.textContent = 'Imagem carregada. Calculando máscara (pode levar 0.5-2s)...';
+        enableControls(false);
+        lastResultWasRemoved = false;
 
-let btnDownloadPNG = btnDownloadPNG;
-let btnDownloadSVG = btnDownloadSVG;
+        // Prepare an offscreen canvas at original size and send to MediaPipe
+        const off = document.createElement('canvas');
+        off.width = img.width;
+        off.height = img.height;
+        const offCtx = off.getContext('2d');
+        offCtx.drawImage(img, 0, 0);
 
-let btnZoomIn = btnZoomIn;
-let btnZoomOut = btnZoomOut;
+        // IMPORTANT: onResults is already set above, now call send
+        await selfieSegmentation.send({ image: off });
+        // when onResults fires it will enable the Remove button
+      } catch (err) {
+        console.error(err);
+        status.textContent = 'Erro ao carregar/processar a imagem: ' + (err.message || err);
+        enableControls(false);
+      }
+    });
 
-let btnUndo = btnUndo;
-let btnRedo = btnRedo;
+    // Apply mask: we will keep only the person (mask) and leave the rest transparent
+    btnRemove.addEventListener('click', () => {
+      if (!originalImage || !segMaskElement) {
+        status.textContent = 'Ainda não há máscara disponível.';
+        return;
+      }
+      // draw original
+      mainCtx.clearRect(0,0,mainCanvas.width, mainCanvas.height);
+      mainCtx.drawImage(originalImage, 0, 0);
 
-let btnApplySmooth = btnApplySmooth;
+      // destination-in with segMask: keeps pixels where mask alpha>0
+      mainCtx.globalCompositeOperation = 'destination-in';
+      // segMaskElement may have same size as maskCanvas or a different internal size; draw stretched to full size
+      mainCtx.drawImage(segMaskElement, 0, 0, mainCanvas.width, mainCanvas.height);
 
-let originalImg = null;
-let segmentationMask = null;
+      // reset composite
+      mainCtx.globalCompositeOperation = 'source-over';
 
-let zoom = 1;
-let offsetX = 0;
-let offsetY = 0;
+      status.textContent = 'Fundo removido — pronto para baixar.';
+      lastResultWasRemoved = true;
+      btnDownload.disabled = false;
+      btnRestore.disabled = false;
+    });
 
-let brushing = false;
-let rectCutting = false;
-let rectStart = null;
+    // Restore original image (undo)
+    btnRestore.addEventListener('click', () => {
+      if (!originalImage) return;
+      mainCtx.clearRect(0,0,mainCanvas.width, mainCanvas.height);
+      mainCtx.drawImage(originalImage, 0, 0);
+      status.textContent = 'Imagem restaurada.';
+      btnDownload.disabled = false;
+      lastResultWasRemoved = false;
+    });
 
-let undoStack = [];
-let redoStack = [];
+    // Download as PNG (preserve resolution, with transparency)
+    btnDownload.addEventListener('click', () => {
+      // If user hasn't removed background, still allow download (will include original)
+      const link = document.createElement('a');
+      link.download = lastResultWasRemoved ? 'imagem_transparente.png' : 'imagem.png';
+      link.href = mainCanvas.toDataURL('image/png');
+      link.click();
+      status.textContent = 'Download iniciado.';
+    });
 
-function saveState(){ undoStack.push(canvas.toDataURL()); redoStack=[]; }
-function undo(){ if(undoStack.length){ redoStack.push(canvas.toDataURL()); let img=new Image(); img.src=undoStack.pop(); img.onload=()=>ctx.drawImage(img,0,0);} }
-function redo(){ if(redoStack.length){ undoStack.push(canvas.toDataURL()); let img=new Image(); img.src=redoStack.pop(); img.onload=()=>ctx.drawImage(img,0,0);} }
-
-btnUndo.onclick=undo;
-btnRedo.onclick=redo;
-
-const selfieSegmentation=new SelfieSegmentation({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}`});
-selfieSegmentation.setOptions({modelSelection:1});
-
-upload.addEventListener("change",async e=>{
-  const file=e.target.files[0];
-  const img=new Image(); img.src=URL.createObjectURL(file);
-  await img.decode();
-
-  canvas.width=img.width;
-  canvas.height=img.height;
-  originalImg=img;
-  ctx.drawImage(img,0,0);
-
-  await computeMask(img);
-  toolbar.classList.remove("hidden");
-  smoothControls.classList.remove("hidden");
-});
-
-async function computeMask(img){
-  const off=document.createElement("canvas");
-  off.width=img.width; off.height=img.height;
-  off.getContext("2d").drawImage(img,0,0);
-
-  selfieSegmentation.onResults(r=>segmentationMask=r.segmentationMask);
-  await selfieSegmentation.send({image:off});
-}
-
-btnRemove.onclick=()=>{
-  saveState();
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.drawImage(originalImg,0,0);
-  ctx.globalCompositeOperation="destination-in";
-  ctx.drawImage(segmentationMask,0,0,canvas.width,canvas.height);
-  ctx.globalCompositeOperation="source-over";
-};
-
-btnRestore.onclick=()=>{ saveState(); ctx.drawImage(originalImg,0,0); };
-
-btnBrush.onclick=()=>{ brushing=!brushing; rectCutting=false; };
-
-btnRectCut.onclick=()=>{ rectCutting=!rectCutting; brushing=false; };
-
-btnClearCut.onclick=()=>{ saveState(); ctx.drawImage(originalImg,0,0); };
-
-canvas.addEventListener("mousedown",e=>{
-  const x=(e.offsetX-offsetX)/zoom;
-  const y=(e.offsetY-offsetY)/zoom;
-
-  if(brushing){
-    saveState();
-    canvas.onmousemove=ev=>{
-      const bx=(ev.offsetX-offsetX)/zoom;
-      const by=(ev.offsetY-offsetY)/zoom;
-      ctx.globalCompositeOperation="destination-out";
-      ctx.beginPath(); ctx.arc(bx,by,brushSize.value,0,Math.PI*2); ctx.fill();
-      ctx.globalCompositeOperation="source-over";
-    };
-  }
-
-  if(rectCutting){ rectStart={x,y}; }
-});
-
-canvas.addEventListener("mouseup",e=>{
-  canvas.onmousemove=null;
-
-  if(rectCutting && rectStart){
-    saveState();
-    const x2=(e.offsetX-offsetX)/zoom;
-    const y2=(e.offsetY-offsetY)/zoom;
-    const w=x2-rectStart.x;
-    const h=y2-rectStart.y;
-    ctx.clearRect(rectStart.x,rectStart.y,w,h);
-    rectStart=null;
-  }
-});
-
-btnZoomIn.onclick=()=>{ zoom*=1.1; redraw(); };
-btnZoomOut.onclick=()=>{ zoom/=1.1; redraw(); };
-
-function redraw(){ ctx.setTransform(zoom,0,0,zoom,offsetX,offsetY); ctx.drawImage(canvas,0,0); }
-
-btnDownloadPNG.onclick=()=>{
-  const link=document.createElement("a"); link.download="imagem.png";
-  link.href=canvas.toDataURL("image/png"); link.click();
-};
-
-btnDownloadSVG.onclick=()=>{
-  const maskData=canvas.toDataURL("image/png");
-  const svg=`<?xml version='1.0'?><svg xmlns='http://www.w3.org/2000/svg' width='${canvas.width}' height='${canvas.height}'>
-  <defs><mask id='m'><image href='${maskData}' width='100%' height='100%'/></mask></defs>
-  <image href='${originalImg.src}' width='100%' height='100%' mask='url(#m)'/>
-  </svg>`;
-  const blob=new Blob([svg],{type:"image/svg+xml"});
-  const url=URL.createObjectURL(blob);
-  const link=document.createElement("a"); link.href=url; link.download="imagem.svg"; link.click();
-};
-
-// ===========================
-//     SUAVIZAÇÃO PROFISSIONAL
-// ===========================
-btnApplySmooth.onclick=()=>{
-  saveState();
-
-  let feather=parseInt(smoothFeather.value);
-  let expand=parseInt(smoothExpand.value);
-  let contrast=parseInt(smoothContrast.value)/100;
-  let edge=parseInt(smoothEdge.value)/100;
-
-  let imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
-  let d=imgData.data;
-
-  for(let i=0;i<d.length;i+=4){
-    let a=d[i+3]/255;
-
-    a=Math.pow(a,1-contrast);
-    a+=(expand/100);
-    a=Math.min(1,Math.max(0,a));
-
-    d[i+3]=a*255;
-  }
-
-  ctx.putImageData(imgData,0,0);
-};
-
-</script>
+    // initial state
+    enableControls(false);
+  </script>
 </body>
 </html>
